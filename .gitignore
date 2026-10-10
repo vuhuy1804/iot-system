@@ -1,0 +1,40 @@
+# ==========================================
+# 1. HỆ THỐNG & IDE CONFIGS
+# ==========================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# ==========================================
+# 2. BACKEND (PYTHON / FASTAPI)
+# ==========================================
+backend/.venv/
+backend/venv/
+backend/ENV/
+backend/__pycache__/
+backend/*/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/*.pyd
+backend/.env
+
+# ==========================================
+# 3. FRONTEND (REACTJS / VITE / TAILWIND CSS)
+# ==========================================
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# Log files chung
+*.log
