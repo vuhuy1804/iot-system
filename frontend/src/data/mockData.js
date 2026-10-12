@@ -35,7 +35,7 @@ export const mockUserProfile = {
     class: "D23CNPM03",
     email: "HuyVQ.B23CN412@stu.ptit.edu.vn",
     phone: "0826180405",
-    github: "github.com/vuhuy1804",
-    figma: "figma.com",
+    github: "https://github.com/vuhuy1804/iot-system",
+    figma: "https://www.figma.com/design/E1eZH2tvxMSoSurjk0x542/Untitled?node-id=9-290&t=qwnbbXjFpi1oAgJv-1",
     baocao: "docs.google.com"
 };

@@ -51,5 +51,5 @@ async def get_me(db: AsyncSession = Depends(get_db)):
         "class": user.class_name,
         "email": user.email,
         "phone": user.phone,
-        "github": user.github
+        "avatar": user.avatar
     }

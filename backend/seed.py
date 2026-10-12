@@ -21,10 +21,10 @@ async def seed_data():
                 class_name="D23CNPM03",
                 email="huyvq.b23cn412@stu.ptit.edu.vn",
                 phone="0826180405",
-                github="github.com/vuhuy1804"
+                avatar="/static/avatars/vuhuy.jpg"
             )
             session.add(new_user)
-            print("✅ Đã chèn tài khoản Sinh viên: Vũ Quang Huy - B23DCCN412")
+            print("✅ Đã chèn tài khoản")
 
         # 2. Chèn danh mục Cảm biến
         sensors = [

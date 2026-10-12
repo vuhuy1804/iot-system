@@ -12,7 +12,7 @@ class User(Base):
     class_name = Column("class", String(50), nullable=False)
     email = Column(String(100), nullable=False)
     phone = Column(String(20), nullable=True)
-    github = Column(String(100), nullable=True)
+    avatar = Column(String(255), nullable=True)
 
 class Sensor(Base):
     __tablename__ = "Sensor"

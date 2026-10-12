@@ -108,7 +108,7 @@ export default function DataHistory() {
                                 <th className="py-3 px-4">ID</th>
                                 <th className="py-3 px-4">Loại cảm biến</th>
                                 <th className="py-3 px-4">Giá trị</th>
-                                <th className="py-3 px-4">Thời gian (YYYY-MM-DD HH:MM:SS)</th>
+                                <th className="py-3 px-4">Thời gian</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 text-sm text-gray-700">

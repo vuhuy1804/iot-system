@@ -1,6 +1,7 @@
 import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from database import engine, Base
 import models
 
@@ -9,6 +10,8 @@ from routers import auth, sensors, devices
 from mqtt_client import setup_mqtt, set_event_loop
 
 app = FastAPI(title="IoT System API", version="1.0.0")
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware,

@@ -7,14 +7,29 @@ from models import DataSensor
 mqtt_client = None
 main_loop = None
 
+# Bảng lưu các Future chờ phản hồi xác nhận từ ESP32 (Hardware ACK)
+pending_ack = {}
+
 def set_event_loop(loop):
     global main_loop
     main_loop = loop
 
-# Hàm xử lý Async: Lưu MySQL + WebSocket Broadcast
+def register_pending_ack(dev_code: str, fut: asyncio.Future):
+    """Đăng ký Future chờ phản hồi cho thiết bị (vd: 'led1')"""
+    pending_ack[dev_code.lower()] = fut
+
+def unregister_pending_ack(dev_code: str):
+    """Hủy đăng ký Future khi hoàn thành hoặc Timeout"""
+    pending_ack.pop(dev_code.lower(), None)
+
+def _safe_set_result(fut, result):
+    """Hàm bổ trợ set result an toàn cho Future từ thread khác"""
+    if not fut.done():
+        fut.set_result(result)
+
+# Hàm xử lý Async: Lưu CSDL Cảm biến + WebSocket Broadcast
 async def process_sensor_payload(data):
     try:
-        # Lấy giá trị linh hoạt từ cả tên ngắn (temp, hum, lux) lẫn tên dài
         raw_temp = data.get("temp") if data.get("temp") is not None else data.get("temperature")
         raw_hum = data.get("hum") if data.get("hum") is not None else data.get("humidity")
         raw_lux = data.get("lux") if data.get("lux") is not None else data.get("light")
@@ -26,7 +41,6 @@ async def process_sensor_payload(data):
         if temp is None and hum is None and lux is None:
             return
 
-        # 1. Lưu CSDL MySQL
         async with AsyncSessionLocal() as session:
             async with session.begin():
                 if temp is not None:
@@ -35,10 +49,7 @@ async def process_sensor_payload(data):
                     session.add(DataSensor(sensor_id=2, value=hum))
                 if lux is not None:
                     session.add(DataSensor(sensor_id=3, value=lux))
-        
-        #print(f"✅ [DATABASE SAVED] Temp: {temp}°C | Hum: {hum}% | Lux: {lux}lx")
 
-        # 2. Phát WebSocket Realtime xuống React
         from main import manager
         await manager.broadcast({
             "type": "SENSOR_UPDATE",
@@ -64,6 +75,7 @@ def on_message(client, userdata, msg):
         topic = msg.topic
         payload = msg.payload.decode("utf-8")
 
+        # 1. XỬ LÝ DỮ LIỆU CẢM BIẾN
         if topic == "sensor/data":
             sensor_data = json.loads(payload)
             global main_loop
@@ -71,6 +83,20 @@ def on_message(client, userdata, msg):
                 asyncio.run_coroutine_threadsafe(process_sensor_payload(sensor_data), main_loop)
             else:
                 asyncio.run(process_sensor_payload(sensor_data))
+
+        # 2. XỬ LÝ PHẢN HỒI TRẠNG THÁI TỪ ESP32 (XÁC NHẬN PHẦN CỨNG)
+        elif topic == "device/status":
+            payload_str = payload.strip()
+            print(f"📩 [HARDWARE ACK RECEIVED]: {payload_str}")
+            
+            # Giả định ESP32 gửi: "LED1: ON", "LED1: OFF",...
+            if ":" in payload_str:
+                dev_code = payload_str.split(":")[0].strip().lower() # 'led1' hoac 'led2'
+                if dev_code in pending_ack:
+                    fut = pending_ack[dev_code]
+                    if main_loop and main_loop.is_running():
+                        main_loop.call_soon_threadsafe(_safe_set_result, fut, payload_str)
+
     except Exception as e:
         print(f"❌ [MQTT PARSE ERROR]: {e}")
 

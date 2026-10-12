@@ -1,13 +1,14 @@
+import asyncio
+import math
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import desc, or_
-import math
+from sqlalchemy import desc
 
 from database import get_db
 from models import Device, ActionHistory, User
 from schemas import DeviceControlSchema
-from mqtt_client import publish_command
+from mqtt_client import publish_command, register_pending_ack, unregister_pending_ack
 
 router = APIRouter()
 
@@ -19,29 +20,74 @@ async def get_devices(db: AsyncSession = Depends(get_db)):
 
 @router.post("/control")
 async def control_device(data: DeviceControlSchema, db: AsyncSession = Depends(get_db)):
+    # 1. Tìm thiết bị trong CSDL
     result = await db.execute(select(Device).filter(Device.id == data.device_id))
     device = result.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Không tìm thấy thiết bị")
 
-    device.status = data.action
-    led_code = "led1" if device.id == 1 else "led2"
-    payload = f"{led_code}:{data.action.lower()}"
+    action_text = "Bật đèn" if data.action == "ON" else "Tắt đèn"
     
-    # Gửi lệnh điều khiển tới Mosquitto Broker
-    publish_command("device/control", payload)
-
-    # Ghi nhận lịch sử thao tác vào MySQL
+    # 2. Ghi nhận lịch sử thao tác với trạng thái ban đầu PENDING
     action_log = ActionHistory(
         user_id=1,
         device_id=device.id,
-        action="Bật đèn" if data.action == "ON" else "Tắt đèn",
-        status="Thành công"
+        action=action_text,
+        status="PENDING"
     )
     db.add(action_log)
     await db.commit()
+    await db.refresh(action_log)
 
-    return {"success": True, "message": f"Đã gửi lệnh {payload}"}
+    led_code = "led1" if device.id == 1 else "led2"
+    payload = f"{led_code}:{data.action.lower()}"
+
+    # 3. Đăng ký Future để chờ phản hồi từ ESP32 qua MQTT topic device/status
+    loop = asyncio.get_running_loop()
+    fut = loop.create_future()
+    register_pending_ack(led_code, fut)
+
+    try:
+        # 4. Gửi lệnh điều khiển tới Mosquitto Broker
+        publish_command("device/control", payload)
+
+        # 5. Chờ phản hồi từ ESP32 trong tối đa 3 GIÂY (Timeout)
+        ack_payload = await asyncio.wait_for(fut, timeout=3.0)
+
+        # 6. ESP32 phản hồi thành công (VD: "LED1: ON")
+        if data.action.upper() in ack_payload.upper():
+            device.status = data.action
+            action_log.status = "Thành công"
+            await db.commit()
+
+            # Broadcast WebSocket cho Frontend
+            from main import manager
+            await manager.broadcast({
+                "type": "DEVICE_UPDATE",
+                "data": {
+                    "device_id": device.id,
+                    "status": device.status,
+                    "is_success": True
+                }
+            })
+
+            return {"success": True, "message": f"Điều khiển {device.name} thành công ({ack_payload})"}
+        else:
+            action_log.status = "Thất bại"
+            await db.commit()
+            raise HTTPException(status_code=400, detail=f"ESP32 phản hồi thất bại: {ack_payload}")
+
+    except asyncio.TimeoutError:
+        # 7. Quá 3s không có phản hồi -> Cập nhật FAILED, giữ nguyên trạng thái cũ của thiết bị
+        action_log.status = "Thất bại"
+        await db.commit()
+        
+        raise HTTPException(
+            status_code=504, 
+            detail="Thiết bị phần cứng (ESP32) không phản hồi hoặc đang ngoại tuyến (Timeout)!"
+        )
+    finally:
+        unregister_pending_ack(led_code)
 
 @router.get("/actions/history")
 async def get_action_history(
