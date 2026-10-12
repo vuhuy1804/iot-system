@@ -27,6 +27,9 @@ async def get_latest_sensors(db: AsyncSession = Depends(get_db)):
     max_hum = await db.execute(
         select(func.max(DataSensor.value)).filter(DataSensor.sensor_id == 2)
     )
+    max_lux = await db.execute(
+        select(func.max(DataSensor.value)).filter(DataSensor.sensor_id == 3)
+    )
 
     temp_val = latest_temp.scalar() or 0.0
     hum_val = latest_hum.scalar() or 0.0
@@ -35,7 +38,7 @@ async def get_latest_sensors(db: AsyncSession = Depends(get_db)):
     return {
         "temperature": {"current": temp_val, "max_today": max_temp.scalar() or temp_val, "unit": "°C"},
         "humidity": {"current": hum_val, "max_today": max_hum.scalar() or hum_val, "unit": "%"},
-        "light": {"current": lux_val, "unit": "lux"}
+        "light": {"current": lux_val, "max_today": max_lux.scalar() or lux_val, "unit": "lux"}
     }
 
 @router.get("/chart-history")

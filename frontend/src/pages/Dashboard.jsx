@@ -18,7 +18,7 @@ export default function Dashboard() {
     const [latestSensors, setLatestSensors] = useState({
         temperature: { current: 0, max_today: 0 },
         humidity: { current: 0, max_today: 0 },
-        light: { current: 0 }
+        light: { current: 0, max_today: 0 }
     });
     const [toast, setToast] = useState(null);
     const [isConnected, setIsConnected] = useState(true);
@@ -97,7 +97,8 @@ export default function Dashboard() {
                             max_today: Math.max(tempVal || 0, prev.temperature.max_today)
                         },
                         light: {
-                            current: luxVal ?? prev.light.current
+                            current: luxVal ?? prev.light.current,
+                            max_today: Math.max(luxVal || 0, prev.light.max_today)
                         },
                         humidity: {
                             current: humVal ?? prev.humidity.current,
