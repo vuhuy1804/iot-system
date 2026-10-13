@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, String
 from database import get_db
 from models import DataSensor, Sensor
 
@@ -77,25 +77,37 @@ async def get_sensor_history(
     sortBy: str = Query("time_desc"),
     db: AsyncSession = Depends(get_db)
 ):
-    # 1. Truy vấn Join bảng DataSensor và Sensor
+    # 1. Join bảng DataSensor và Sensor
     query = select(DataSensor, Sensor.name, Sensor.unit).join(
         Sensor, DataSensor.sensor_id == Sensor.id
     )
 
-    # 2. Lọc theo Loại Cảm biến (Category)
-    if category != "Tất cả":
-        query = query.filter(Sensor.name == category)
+    # 2. Xử lý tìm kiếm
+    trimmed_search = search.strip()
+    if trimmed_search:
+        contains_term = f"%{trimmed_search}%"  # Tìm kiếm chứa chuỗi (Dành cho Thời gian)
+        prefix_term = f"{trimmed_search}%"     # Tìm kiếm bắt đầu bằng (Dành cho Giá trị số)
 
-    # 3. Lọc theo từ khóa Tìm kiếm (Search)
-    if search:
-        search_term = f"%{search}%"
-        query = query.filter(
-            (Sensor.name.like(search_term)) |
-            (DataSensor.value.cast(String).like(search_term)) |
-            (DataSensor.recorded_at.cast(String).like(search_term))
-        )
+        if category == "Thời gian":
+            # Thời gian: Tìm kiếm dạng chứa từ khóa (VD: gõ "10:05" hoặc "2026-10")
+            query = query.filter(DataSensor.recorded_at.cast(String).like(contains_term))
+            
+        elif category in ["Nhiệt độ", "Độ ẩm", "Ánh sáng"]:
+            # Cảm biến cụ thể: Chỉ tìm các giá trị BẮT ĐẦU BẰNG từ khóa nhập (VD: gõ "14" chỉ ra "14.x", không ra "614.x")
+            query = query.filter(
+                Sensor.name == category,
+                DataSensor.value.cast(String).like(prefix_term)
+            )
+            
+        else:
+            # "Tất cả": Lọc thông minh - Tên/Thời gian tìm dạng chứa, Giá trị tìm dạng bắt đầu bằng
+            query = query.filter(
+                (Sensor.name.like(contains_term)) |
+                (DataSensor.value.cast(String).like(prefix_term)) |
+                (DataSensor.recorded_at.cast(String).like(contains_term))
+            )
 
-    # 4. Sắp xếp (Sort)
+    # 3. Sắp xếp (Sort)
     if sortBy == "time_asc":
         query = query.order_by(DataSensor.recorded_at.asc())
     elif sortBy == "val_asc":
@@ -105,26 +117,26 @@ async def get_sensor_history(
     else:  # time_desc
         query = query.order_by(DataSensor.recorded_at.desc())
 
-    # 5. Tính tổng số bản ghi (Phân trang)
+    # 4. Tính tổng số bản ghi
     total_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(total_query)
     total_count = total_result.scalar() or 0
     total_pages = max(1, (total_count + limit - 1) // limit)
 
-    # 6. Phân trang LIMIT / OFFSET
+    # 5. Phân trang LIMIT / OFFSET
     offset = (page - 1) * limit
     query = query.offset(offset).limit(limit)
 
     result = await db.execute(query)
     rows = result.all()
 
-    # 7. Định dạng mảng trả về khớp 100% với props React trong DataHistory.jsx
+    # 6. Định dạng mảng trả về
     formatted_data = []
     for ds, sensor_name, sensor_unit in rows:
         formatted_data.append({
             "id": ds.id,
-            "type": sensor_name,  # 'Nhiệt độ', 'Độ ẩm', 'Ánh sáng'
-            "value": f"{ds.value} {sensor_unit or ''}".strip(),  # VD: '29.5 °C'
+            "type": sensor_name,
+            "value": f"{ds.value} {sensor_unit or ''}".strip(),
             "numValue": ds.value,
             "time": ds.recorded_at.strftime("%Y-%m-%d %H:%M:%S")
         })
