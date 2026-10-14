@@ -9,7 +9,7 @@ import {
     Tooltip,
     Legend
 } from 'recharts';
-import { Thermometer, Sun, Droplets, Lightbulb, Sliders, CheckCircle, AlertCircle, WifiOff } from 'lucide-react';
+import { Thermometer, Sun, Droplets, Lightbulb, Sliders, CheckCircle, AlertCircle, WifiOff, Loader2 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 
 export default function Dashboard() {
@@ -22,6 +22,9 @@ export default function Dashboard() {
     });
     const [toast, setToast] = useState(null);
     const [isConnected, setIsConnected] = useState(true);
+
+    // State quản lý trạng thái loading riêng cho từng thiết bị theo ID
+    const [loadingDevices, setLoadingDevices] = useState({});
 
     const wsRef = useRef(null);
     const sensorTimeoutRef = useRef(null);
@@ -157,17 +160,20 @@ export default function Dashboard() {
         };
     }, []);
 
-    // 3. Điều khiển Bật/Tắt Đèn LED qua REST API & MQTT
+    // 3. Điều khiển Bật/Tắt Đèn LED qua REST API & MQTT (CÓ HIỆU ỨNG LOADING MIN 0.5S)
     const handleToggleDevice = async (id) => {
+        if (loadingDevices[id]) return; // Tránh bấm liên tục khi đang xử lý
+
         const targetDev = devices.find((d) => d.id === id);
         if (!targetDev) return;
 
         const newStatus = !targetDev.status;
         const actionWord = newStatus ? 'Bật' : 'Tắt';
         const msg = `${actionWord} ${targetDev.name} thành công`;
+        const startTime = Date.now();
 
-        // Optimistic UI Update tạm thời
-        setDevices(prev => prev.map(dev => dev.id === id ? { ...dev, status: newStatus } : dev));
+        // Bật loading cho nút công tắc thiết bị này
+        setLoadingDevices(prev => ({ ...prev, [id]: true }));
 
         try {
             await apiRequest('/devices/control', {
@@ -177,18 +183,29 @@ export default function Dashboard() {
                     action: newStatus ? 'ON' : 'OFF'
                 })
             });
+
+            // Nếu API phản hồi nhanh hơn 0.5s (500ms), bắt buộc chờ đủ 0.5s để thể hiện hiệu ứng loading
+            const elapsedTime = Date.now() - startTime;
+            if (elapsedTime < 500) {
+                await new Promise(resolve => setTimeout(resolve, 500 - elapsedTime));
+            }
+
+            // Cập nhật trạng thái mới trên giao diện sau khi bật/tắt thành công
+            setDevices(prev => prev.map(dev => dev.id === id ? { ...dev, status: newStatus } : dev));
             setToast({ type: 'success', message: msg });
         } catch (err) {
-            // ROLLBACK UI: Giữ nguyên trạng thái cũ nếu API/MQTT báo lỗi
-            setDevices(prev => prev.map(dev => dev.id === id ? { ...dev, status: !newStatus } : dev));
+            // Khi thất bại, Backend mất đúng 3 giây timeout nên loading tự động kéo dài 3 giây trước khi báo lỗi
             setToast({ type: 'error', message: `${actionWord} ${targetDev.name} thất bại!` });
+        } finally {
+            // Tắt loading cho thiết bị
+            setLoadingDevices(prev => ({ ...prev, [id]: false }));
         }
     };
 
     return (
         <div className="space-y-4 relative overflow-hidden">
             {/* CẢNH BÁO MẤT KẾT NỐI CẢM BIẾN / ESP32 */}
-            {!isConnected && (
+            {/* {!isConnected && (
                 <div className="bg-rose-500 text-white px-4 py-3 rounded-2xl shadow-lg flex items-center justify-between animate-pulse">
                     <div className="flex items-center space-x-3">
                         <WifiOff className="w-5 h-5 text-white" />
@@ -197,7 +214,7 @@ export default function Dashboard() {
                         </span>
                     </div>
                 </div>
-            )}
+            )} */}
 
             {/* TOAST THÔNG BÁO */}
             {toast && (
@@ -247,7 +264,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div className="lg:col-span-2 space-y-4">
                     <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-                        <h4 className="text-xs font-bold text-gray-800 mb-2 tracking-wide uppercase">BIỂU ĐỒ NHIỆT ĐỘ & ĐỘ ẨM REALTIME</h4>
+                        <h4 className="text-xs font-bold text-gray-800 mb-2 tracking-wide uppercase">BIỂU ĐỒ NHIỆT ĐỘ & ĐỘ ẨM</h4>
                         <div className="h-40">
                             <ResponsiveContainer width="100%" height="100%">
                                 <LineChart data={chartData} margin={{ right: 30 }}>
@@ -264,7 +281,7 @@ export default function Dashboard() {
                     </div>
 
                     <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-                        <h4 className="text-xs font-bold text-gray-800 mb-2 tracking-wide uppercase">BIỂU ĐỒ ĐỘ SÁNG REALTIME</h4>
+                        <h4 className="text-xs font-bold text-gray-800 mb-2 tracking-wide uppercase">BIỂU ĐỒ ĐỘ SÁNG</h4>
                         <div className="h-40">
                             <ResponsiveContainer width="100%" height="100%">
                                 <LineChart data={chartData} margin={{ right: 30 }}>
@@ -287,22 +304,34 @@ export default function Dashboard() {
                     </div>
 
                     <div className="space-y-3">
-                        {devices.map((device) => (
-                            <div key={device.id} className="flex items-center justify-between p-3.5 bg-gray-50 rounded-xl border border-gray-100">
-                                <div className="flex items-center space-x-3">
-                                    <div className={`p-2 rounded-lg ${device.status ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-400'}`}>
-                                        <Lightbulb className="w-4 h-4" />
+                        {devices.map((device) => {
+                            const isLoading = loadingDevices[device.id];
+
+                            return (
+                                <div key={device.id} className="flex items-center justify-between p-3.5 bg-gray-50 rounded-xl border border-gray-100">
+                                    <div className="flex items-center space-x-3">
+                                        <div className={`p-2 rounded-lg ${device.status ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-400'}`}>
+                                            <Lightbulb className="w-4 h-4" />
+                                        </div>
+                                        <span className="font-semibold text-xs text-gray-700">{device.name}</span>
                                     </div>
-                                    <span className="font-semibold text-xs text-gray-700">{device.name}</span>
+                                    <button
+                                        onClick={() => handleToggleDevice(device.id)}
+                                        disabled={isLoading}
+                                        className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 relative ${isLoading
+                                                ? 'bg-blue-400 opacity-80 cursor-not-allowed'
+                                                : device.status ? 'bg-blue-600' : 'bg-gray-300'
+                                            }`}
+                                    >
+                                        <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 flex items-center justify-center ${device.status ? 'translate-x-5' : 'translate-x-0'}`}>
+                                            {isLoading && (
+                                                <Loader2 className="w-2.5 h-2.5 animate-spin text-blue-600" />
+                                            )}
+                                        </div>
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() => handleToggleDevice(device.id)}
-                                    className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 ${device.status ? 'bg-blue-600' : 'bg-gray-300'}`}
-                                >
-                                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ${device.status ? 'translate-x-5' : 'translate-x-0'}`} />
-                                </button>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </div>

@@ -37,5 +37,6 @@ export const mockUserProfile = {
     phone: "0826180405",
     github: "https://github.com/vuhuy1804/iot-system",
     figma: "https://www.figma.com/design/E1eZH2tvxMSoSurjk0x542/Untitled?node-id=9-290&t=qwnbbXjFpi1oAgJv-1",
-    baocao: "docs.google.com"
+    baocao: "https://drive.google.com/file/d/1A3bCdeeFGyMkhO5kARwRjbm-kSe_Z1qH/view?usp=sharing",
+    apidocs: "http://127.0.0.1:8000/redoc"
 };

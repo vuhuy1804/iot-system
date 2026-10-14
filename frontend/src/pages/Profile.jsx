@@ -24,7 +24,8 @@ export default function Profile() {
                         avatar: res.avatar || null, // Nhận avatar từ API Backend
                         github: mockUserProfile.github,
                         figma: mockUserProfile.figma,
-                        baocao: mockUserProfile.baocao
+                        baocao: mockUserProfile.baocao,
+                        apidocs: mockUserProfile.apidocs
                     });
                 }
             } catch (err) {
@@ -119,6 +120,13 @@ export default function Profile() {
                             PDFBaoCao
                         </a>
                     </div>
+
+                    <div className="flex justify-between items-center p-3.5 bg-gray-50/80 rounded-xl">
+                        <span className="text-sm font-medium text-gray-500">API Docs</span>
+                        <a href={profile.apidocs?.startsWith('http') ? profile.apidocs : `https://${profile.apidocs}`} target="_blank" rel="noreferrer" className="text-sm font-bold text-blue-600 hover:underline">
+                            API Docs
+                        </a>
+                    </div>
                 </div>
 
                 {/* NÚT ĐĂNG XUẤT */}
@@ -127,7 +135,6 @@ export default function Profile() {
                         onClick={logout}
                         className="w-full py-3 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-sm rounded-xl flex items-center justify-center space-x-2 transition-all shadow-sm"
                     >
-                        <LogOut className="w-4 h-4" />
                         <span>Đăng xuất tài khoản</span>
                     </button>
                 </div>

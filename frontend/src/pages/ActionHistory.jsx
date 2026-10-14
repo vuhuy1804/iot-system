@@ -102,6 +102,7 @@ export default function ActionHistory() {
                     <option value="Tất cả">Trạng thái: Tất cả</option>
                     <option value="Thành công">Thành công</option>
                     <option value="Thất bại">Thất bại</option>
+                    <option value="Đang chờ">Đang chờ</option>
                 </select>
 
                 <select
