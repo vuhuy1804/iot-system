@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from passlib.context import CryptContext
-from jose import jwt
+from jose import jwt, JWTError
 from datetime import datetime, timedelta
 
 from database import get_db
@@ -12,6 +13,36 @@ from config import settings
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Cấu hình Scheme lấy Bearer Token từ Header cho Swagger UI & API
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+# Hàm dependency giải mã JWT Token để lấy thông tin User đang đăng nhập
+async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token không hợp lệ hoặc đã hết hạn",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        # Giải mã chuỗi JWT Token
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            print("❌ Lỗi JWT: Không tìm thấy field 'sub' trong Payload")
+            raise credentials_exception
+    except JWTError as e:
+        print(f"❌ Lỗi giải mã JWT: {e}")  # Sẽ in ra lý do (VD: Signature has expired)
+        raise credentials_exception
+
+    # Truy vấn CSDL
+    result = await db.execute(select(User).filter(User.username == username))
+    user = result.scalars().first()
+    if user is None:
+        print(f"❌ Lỗi CSDL: Không tìm thấy username '{username}' trong bảng Users")
+        raise credentials_exception
+        
+    return user
 
 @router.post(
     "/login", 
@@ -104,21 +135,17 @@ async def login(data: LoginSchema, db: AsyncSession = Depends(get_db)):
         }
     }
 )
-async def get_me(db: AsyncSession = Depends(get_db)):
+async def get_me(current_user: User = Depends(get_current_user)):
     """
     **Lấy Thông tin Cá nhân**:
-    - Truy vấn thông tin tài khoản sinh viên quản trị (`vuhuy`).
+    - Tự động lấy hồ sơ từ JWT Token của tài khoản đang đăng nhập.
     - Trả về Họ tên, MSNV, Lớp, Email, SĐT và Đường dẫn Ảnh đại diện Static.
     """
-    result = await db.execute(select(User).filter(User.username == "vuhuy"))
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Không tìm thấy người dùng")
     return {
-        "fullName": user.fullName,
-        "student_id": user.student_id,
-        "class": user.class_name,
-        "email": user.email,
-        "phone": user.phone,
-        "avatar": user.avatar
+        "fullName": current_user.fullName,
+        "student_id": current_user.student_id,
+        "class": current_user.class_name,
+        "email": current_user.email,
+        "phone": current_user.phone,
+        "avatar": current_user.avatar
     }
