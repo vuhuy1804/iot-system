@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from passlib.context import CryptContext
@@ -14,32 +14,33 @@ from config import settings
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Cấu hình Scheme lấy Bearer Token từ Header cho Swagger UI & API
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+# Sử dụng HTTPBearer thay cho OAuth2PasswordBearer
+security_bearer = HTTPBearer()
 
-# Hàm dependency giải mã JWT Token để lấy thông tin User đang đăng nhập
-async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> User:
+# Hàm dependency giải mã JWT Token
+async def get_current_user(
+    auth: HTTPAuthorizationCredentials = Depends(security_bearer), 
+    db: AsyncSession = Depends(get_db)
+) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Token không hợp lệ hoặc đã hết hạn",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    token = auth.credentials
+
     try:
-        # Giải mã chuỗi JWT Token
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
-            print("❌ Lỗi JWT: Không tìm thấy field 'sub' trong Payload")
             raise credentials_exception
-    except JWTError as e:
-        print(f"❌ Lỗi giải mã JWT: {e}")  # Sẽ in ra lý do (VD: Signature has expired)
+    except JWTError:
         raise credentials_exception
 
-    # Truy vấn CSDL
     result = await db.execute(select(User).filter(User.username == username))
     user = result.scalars().first()
     if user is None:
-        print(f"❌ Lỗi CSDL: Không tìm thấy username '{username}' trong bảng Users")
         raise credentials_exception
         
     return user
@@ -108,39 +109,9 @@ async def login(data: LoginSchema, db: AsyncSession = Depends(get_db)):
 
 @router.get(
     "/me", 
-    summary="Lấy thông tin Hồ sơ Sinh viên (Profile)",
-    responses={
-        200: {
-            "description": "Chi tiết Hồ sơ sinh viên thực hiện đề tài",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "fullName": "Vũ Quang Huy",
-                        "student_id": "B23DCCN412",
-                        "class": "D23CNPM03",
-                        "email": "huyvq.b23cn412@stu.ptit.edu.vn",
-                        "phone": "0826180405",
-                        "avatar": "/static/avatars/vuhuy.jpg"
-                    }
-                }
-            }
-        },
-        404: {
-            "description": "Không tìm thấy thông tin người dùng trong CSDL.",
-            "content": {
-                "application/json": {
-                    "example": {"detail": "Không tìm thấy người dùng"}
-                }
-            }
-        }
-    }
+    summary="Lấy thông tin Hồ sơ Sinh viên (Profile)"
 )
 async def get_me(current_user: User = Depends(get_current_user)):
-    """
-    **Lấy Thông tin Cá nhân**:
-    - Tự động lấy hồ sơ từ JWT Token của tài khoản đang đăng nhập.
-    - Trả về Họ tên, MSNV, Lớp, Email, SĐT và Đường dẫn Ảnh đại diện Static.
-    """
     return {
         "fullName": current_user.fullName,
         "student_id": current_user.student_id,

@@ -10,6 +10,9 @@ from models import Device, ActionHistory, User
 from schemas import DeviceControlSchema
 from mqtt_client import publish_command, register_pending_ack, unregister_pending_ack
 
+# Import thêm hàm dependency get_current_user từ router auth
+from routers.auth import get_current_user
+
 router = APIRouter()
 
 @router.get(
@@ -38,7 +41,7 @@ async def get_devices(db: AsyncSession = Depends(get_db)):
 
 @router.post(
     "/control", 
-    summary="Điều khiển Thiết bị Phần cứng (Xác nhận MQTT ACK)",
+    summary="Điều khiển Thiết bị Phần cứng (Xác nhận MQTT ACK - Yêu cầu Đăng nhập)",
     responses={
         200: {
             "description": "Điều khiển thành công, phần cứng đã phản hồi ACK.",
@@ -48,6 +51,14 @@ async def get_devices(db: AsyncSession = Depends(get_db)):
                         "success": True,
                         "message": "Điều khiển Đèn led 1 thành công (LED1: ON)"
                     }
+                }
+            }
+        },
+        401: {
+            "description": "Chưa đăng nhập hoặc JWT Token không hợp lệ.",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Token không hợp lệ hoặc đã hết hạn"}
                 }
             }
         },
@@ -71,13 +82,19 @@ async def get_devices(db: AsyncSession = Depends(get_db)):
         }
     }
 )
-async def control_device(data: DeviceControlSchema, db: AsyncSession = Depends(get_db)):
+async def control_device(
+    data: DeviceControlSchema, 
+    db: AsyncSession = Depends(get_db),
+    
+    current_user: User = Depends(get_current_user)
+):
     """
-    **Luồng Điều khiển Hardware ACK**:
-    1. Lưu nhật ký `ActionHistory` trạng thái `PENDING`.
-    2. Gửi lệnh qua MQTT topic `device/control`.
-    3. Chờ ESP32 kích hoạt rơ-le và bắn phản hồi lên `device/status` (Max 3s).
-    4. Cập nhật trạng thái `Thành công` / `Thất bại` vào MySQL và phát WebSocket.
+    **Luồng Điều khiển Hardware ACK & Bảo mật**:
+    1. Xác thực JWT Token qua `current_user` (Nếu không có Token sẽ lập tức trả về 401 Unauthorized).
+    2. Lưu nhật ký `ActionHistory` trạng thái `PENDING` kèm `user_id` chính xác của người đang đăng nhập.
+    3. Gửi lệnh qua MQTT topic `device/control`.
+    4. Chờ ESP32 kích hoạt rơ-le và bắn phản hồi lên `device/status` (Max 3s).
+    5. Cập nhật trạng thái `Thành công` / `Thất bại` vào MySQL và phát WebSocket.
     """
     result = await db.execute(select(Device).filter(Device.id == data.device_id))
     device = result.scalars().first()
@@ -87,7 +104,7 @@ async def control_device(data: DeviceControlSchema, db: AsyncSession = Depends(g
     action_text = "Bật đèn" if data.action == "ON" else "Tắt đèn"
     
     action_log = ActionHistory(
-        user_id=1,
+        user_id=current_user.id,
         device_id=device.id,
         action=action_text,
         status="PENDING"
