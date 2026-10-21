@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Clock, RotateCw } from 'lucide-react';
+import { Clock, RotateCw, Copy, Check } from 'lucide-react';
 import { apiRequest } from '../services/api';
 
 export default function ActionHistory() {
@@ -13,6 +13,16 @@ export default function ActionHistory() {
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [totalPages, setTotalPages] = useState(1);
     const [loading, setLoading] = useState(false);
+
+    // State lưu ID của hàng vừa copy để đổi icon phản hồi
+    const [copiedId, setCopiedId] = useState(null);
+
+    const handleCopyTime = (timeStr, id) => {
+        if (!timeStr) return;
+        navigator.clipboard.writeText(timeStr);
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 1500);
+    };
 
     // Call REST API Backend kết nối MySQL
     const loadData = useCallback(async () => {
@@ -153,7 +163,23 @@ export default function ActionHistory() {
                                                 {row.status}
                                             </span>
                                         </td>
-                                        <td className="py-3.5 px-4 text-gray-500">{row.time}</td>
+                                        <td className="py-3.5 px-4 text-gray-500">
+                                            <div className="flex items-center gap-1.5">
+                                                <span>{row.time}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCopyTime(row.time, row.id)}
+                                                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                                    title="Sao chép thời gian"
+                                                >
+                                                    {copiedId === row.id ? (
+                                                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                                    ) : (
+                                                        <Copy className="w-3.5 h-3.5" />
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))
                             ) : (

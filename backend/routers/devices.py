@@ -21,8 +21,8 @@ router = APIRouter()
             "content": {
                 "application/json": {
                     "example": [
-                        {"id": 1, "name": "Đèn led 1", "status": True},
-                        {"id": 2, "name": "Đèn led 2", "status": False}
+                        {"id": 1, "name": "Đèn led 1", "status": "OFF"},
+                        {"id": 2, "name": "Đèn led 2", "status": "OFF"}
                     ]
                 }
             }
