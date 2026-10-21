@@ -4,6 +4,7 @@ from sqlalchemy.future import select
 from sqlalchemy import desc, func, String
 from database import get_db
 from models import DataSensor, Sensor
+from datetime import date
 
 router = APIRouter()
 
@@ -42,13 +43,13 @@ async def get_latest_sensors(db: AsyncSession = Depends(get_db)):
     )
 
     max_temp = await db.execute(
-        select(func.max(DataSensor.value)).filter(DataSensor.sensor_id == 1)
+        select(func.max(DataSensor.value)).filter(DataSensor.sensor_id == 1, func.date(DataSensor.recorded_at) == date.today())
     )
     max_hum = await db.execute(
-        select(func.max(DataSensor.value)).filter(DataSensor.sensor_id == 2)
+        select(func.max(DataSensor.value)).filter(DataSensor.sensor_id == 2, func.date(DataSensor.recorded_at) == date.today())
     )
     max_lux = await db.execute(
-        select(func.max(DataSensor.value)).filter(DataSensor.sensor_id == 3)
+        select(func.max(DataSensor.value)).filter(DataSensor.sensor_id == 3, func.date(DataSensor.recorded_at) == date.today())
     )
 
     temp_val = latest_temp.scalar() or 0.0
