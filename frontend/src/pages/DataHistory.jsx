@@ -12,7 +12,6 @@ export default function DataHistory() {
     const [totalPages, setTotalPages] = useState(1);
     const [loading, setLoading] = useState(false);
 
-    // State lưu ID của hàng vừa copy để đổi icon phản hồi
     const [copiedId, setCopiedId] = useState(null);
 
     const handleCopyTime = (timeStr, id) => {
@@ -22,7 +21,6 @@ export default function DataHistory() {
         setTimeout(() => setCopiedId(null), 1500);
     };
 
-    // Call API REST Backend kết nối trực tiếp MySQL
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
@@ -69,6 +67,7 @@ export default function DataHistory() {
                     <option value="Nhiệt độ">Chỉ tìm: Nhiệt độ</option>
                     <option value="Độ ẩm">Chỉ tìm: Độ ẩm</option>
                     <option value="Ánh sáng">Chỉ tìm: Ánh sáng</option>
+                    <option value="Tốc độ gió">Chỉ tìm: wind-speed</option>
                 </select>
 
                 <div className="relative flex-1 min-w-[240px]">
@@ -158,7 +157,7 @@ export default function DataHistory() {
                     </table>
                 </div>
 
-                {/* CHÂN TRANG PHÂN TRANG */}
+                {/* PHÂN TRANG */}
                 <div className="flex flex-wrap items-center justify-between mt-6 pt-4 border-t border-gray-100 text-sm text-gray-500 gap-3">
                     <div className="flex items-center space-x-3">
                         <span>Trang <strong className="text-gray-900">{currentPage}</strong> / {totalPages}</span>

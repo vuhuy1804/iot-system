@@ -2,12 +2,11 @@ import json
 import asyncio
 import paho.mqtt.client as mqtt
 from database import AsyncSessionLocal
-from models import DataSensor
+from models import DataSensor, AlertHistory
 
 mqtt_client = None
 main_loop = None
 
-# Bảng lưu các Future chờ phản hồi xác nhận từ ESP32 (Hardware ACK)
 pending_ack = {}
 
 def set_event_loop(loop):
@@ -15,31 +14,30 @@ def set_event_loop(loop):
     main_loop = loop
 
 def register_pending_ack(dev_code: str, fut: asyncio.Future):
-    """Đăng ký Future chờ phản hồi cho thiết bị (vd: 'led1')"""
     pending_ack[dev_code.lower()] = fut
 
 def unregister_pending_ack(dev_code: str):
-    """Hủy đăng ký Future khi hoàn thành hoặc Timeout"""
     pending_ack.pop(dev_code.lower(), None)
 
 def _safe_set_result(fut, result):
-    """Hàm bổ trợ set result an toàn cho Future từ thread khác"""
     if not fut.done():
         fut.set_result(result)
 
-# Hàm xử lý Async: Lưu CSDL Cảm biến + WebSocket Broadcast
 async def process_sensor_payload(data):
     try:
         raw_temp = data.get("temp") if data.get("temp") is not None else data.get("temperature")
         raw_hum = data.get("hum") if data.get("hum") is not None else data.get("humidity")
         raw_lux = data.get("lux") if data.get("lux") is not None else data.get("light")
+        raw_wind = data.get("wind_speed") if data.get("wind_speed") is not None else data.get("wind")
 
         temp = float(raw_temp) if raw_temp is not None else None
         hum = float(raw_hum) if raw_hum is not None else None
         lux = float(raw_lux) if raw_lux is not None else None
+        wind = float(raw_wind) if raw_wind is not None else None
 
-        if temp is None and hum is None and lux is None:
-            return
+        is_alert = False
+        if wind is not None and wind > 300.0:
+            is_alert = True
 
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -49,6 +47,12 @@ async def process_sensor_payload(data):
                     session.add(DataSensor(sensor_id=2, value=hum))
                 if lux is not None:
                     session.add(DataSensor(sensor_id=3, value=lux))
+                if wind is not None:
+                    session.add(DataSensor(sensor_id=4, value=wind))
+                
+                # Lưu vào lịch sử cảnh báo nếu wind_speed > 300
+                if is_alert:
+                    session.add(AlertHistory(sensor_type="Tốc độ gió", value=wind))
 
         from main import manager
         await manager.broadcast({
@@ -56,7 +60,9 @@ async def process_sensor_payload(data):
             "data": {
                 "temperature": temp,
                 "humidity": hum,
-                "light": lux
+                "light": lux,
+                "wind_speed": wind,
+                "is_alert": is_alert
             }
         })
     except Exception as e:
@@ -75,7 +81,6 @@ def on_message(client, userdata, msg):
         topic = msg.topic
         payload = msg.payload.decode("utf-8")
 
-        # 1. XỬ LÝ DỮ LIỆU CẢM BIẾN
         if topic == "sensor/data":
             sensor_data = json.loads(payload)
             global main_loop
@@ -84,14 +89,10 @@ def on_message(client, userdata, msg):
             else:
                 asyncio.run(process_sensor_payload(sensor_data))
 
-        # 2. XỬ LÝ PHẢN HỒI TRẠNG THÁI TỪ ESP32 (XÁC NHẬN PHẦN CỨNG)
         elif topic == "device/status":
             payload_str = payload.strip()
-            print(f"📩 [HARDWARE ACK RECEIVED]: {payload_str}")
-            
-            # Giả định ESP32 gửi: "LED1: ON", "LED1: OFF",...
             if ":" in payload_str:
-                dev_code = payload_str.split(":")[0].strip().lower() # 'led1' hoac 'led2'
+                dev_code = payload_str.split(":")[0].strip().lower()
                 if dev_code in pending_ack:
                     fut = pending_ack[dev_code]
                     if main_loop and main_loop.is_running():

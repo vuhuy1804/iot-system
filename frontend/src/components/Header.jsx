@@ -6,6 +6,7 @@ export default function Header({ activeTab, setActiveTab }) {
         { id: 'sensor-history', label: 'Lịch sử cảm biến' },
         { id: 'action-history', label: 'Lịch sử hoạt động' },
         { id: 'profile', label: 'Cá nhân' },
+        { id: 'alert-stats', label: 'Thống kê cảnh báo' },
     ];
 
     return (
@@ -17,8 +18,8 @@ export default function Header({ activeTab, setActiveTab }) {
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
                             className={`px-6 py-2 text-sm font-medium rounded-full transition-all duration-200 ${activeTab === tab.id
-                                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-                                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
+                                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
                                 }`}
                         >
                             {tab.label}

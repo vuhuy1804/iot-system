@@ -9,7 +9,7 @@ import {
     Tooltip,
     Legend
 } from 'recharts';
-import { Thermometer, Sun, Droplets, Lightbulb, Sliders, CheckCircle, AlertCircle, WifiOff, Loader2 } from 'lucide-react';
+import { Thermometer, Sun, Droplets, Wind, Sliders, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 
 export default function Dashboard() {
@@ -18,18 +18,15 @@ export default function Dashboard() {
     const [latestSensors, setLatestSensors] = useState({
         temperature: { current: 0, max_today: 0 },
         humidity: { current: 0, max_today: 0 },
-        light: { current: 0, max_today: 0 }
+        light: { current: 0, max_today: 0 },
+        wind_speed: { current: 0, max_today: 0 }
     });
     const [toast, setToast] = useState(null);
-    const [isConnected, setIsConnected] = useState(true);
-
-    // State quản lý trạng thái loading riêng cho từng thiết bị theo ID
+    const [isWindAlert, setIsWindAlert] = useState(false);
     const [loadingDevices, setLoadingDevices] = useState({});
 
     const wsRef = useRef(null);
-    const sensorTimeoutRef = useRef(null);
 
-    // Toast auto-dismiss sau 3 giây
     useEffect(() => {
         if (toast) {
             const timer = setTimeout(() => setToast(null), 3000);
@@ -37,17 +34,6 @@ export default function Dashboard() {
         }
     }, [toast]);
 
-    // Hàm đếm ngược kiểm tra mất kết nối cảm biến (6 giây)
-    const resetSensorTimeout = () => {
-        setIsConnected(true);
-        if (sensorTimeoutRef.current) clearTimeout(sensorTimeoutRef.current);
-
-        sensorTimeoutRef.current = setTimeout(() => {
-            setIsConnected(false);
-        }, 6000);
-    };
-
-    // 1. Lấy dữ liệu khởi tạo từ Backend REST API
     const fetchInitialData = async () => {
         try {
             const [statRes, devicesRes, chartRes] = await Promise.all([
@@ -56,7 +42,12 @@ export default function Dashboard() {
                 apiRequest('/sensors/chart-history')
             ]);
 
-            if (statRes) setLatestSensors(statRes);
+            if (statRes) {
+                setLatestSensors(statRes);
+                if (statRes.wind_speed?.current > 300) {
+                    setIsWindAlert(true);
+                }
+            }
             if (devicesRes) {
                 const formattedDevices = devicesRes.map(d => ({
                     ...d,
@@ -72,7 +63,6 @@ export default function Dashboard() {
         }
     };
 
-    // 2. Kết nối WebSocket Realtime với FastAPI Server
     useEffect(() => {
         fetchInitialData();
 
@@ -84,16 +74,20 @@ export default function Dashboard() {
             wsRef.current.onmessage = (event) => {
                 const message = JSON.parse(event.data);
 
-                // A. NHẬN DỮ LIỆU CẢM BIẾN REALTIME
                 if (message.type === 'SENSOR_UPDATE') {
-                    resetSensorTimeout(); // Xác nhận hệ thống cảm biến đang sống
-
                     const data = message.data;
                     const tempVal = data.temperature;
                     const humVal = data.humidity;
                     const luxVal = data.light;
+                    const windVal = data.wind_speed;
 
-                    // Cập nhật Stat Cards
+                    // Kích hoạt nhấp nháy StatCard khi Tốc độ gió > 300 m/s
+                    if (windVal > 300 || data.is_alert) {
+                        setIsWindAlert(true);
+                    } else {
+                        setIsWindAlert(false);
+                    }
+
                     setLatestSensors(prev => ({
                         temperature: {
                             current: tempVal ?? prev.temperature.current,
@@ -106,10 +100,13 @@ export default function Dashboard() {
                         humidity: {
                             current: humVal ?? prev.humidity.current,
                             max_today: Math.max(humVal || 0, prev.humidity.max_today)
+                        },
+                        wind_speed: {
+                            current: windVal ?? prev.wind_speed?.current ?? 0,
+                            max_today: Math.max(windVal || 0, prev.wind_speed?.max_today || 0)
                         }
                     }));
 
-                    // Cập nhật điểm dữ liệu mới vào Biểu đồ
                     const now = new Date();
                     const timeStr = now.toTimeString().split(' ')[0];
 
@@ -117,7 +114,8 @@ export default function Dashboard() {
                         time: timeStr,
                         temp: tempVal,
                         hum: humVal,
-                        lux: luxVal
+                        lux: luxVal,
+                        wind: windVal
                     };
 
                     setChartData(prev => {
@@ -126,7 +124,6 @@ export default function Dashboard() {
                     });
                 }
 
-                // B. NHẬN PHẢN HỒI THỰC TẾ TRẠNG THÁI THIẾT BỊ TỪ ESP32
                 if (message.type === 'DEVICE_UPDATE') {
                     const { device_id, status, is_success } = message.data;
 
@@ -144,25 +141,17 @@ export default function Dashboard() {
                     }
                 }
             };
-
-            wsRef.current.onerror = (err) => {
-                console.error('WebSocket Error:', err);
-                setIsConnected(false);
-            };
         } catch (e) {
-            console.error('Không thể tạo kết nối WebSocket:', e);
-            setIsConnected(false);
+            console.error('Không thể kết nối WebSocket:', e);
         }
 
         return () => {
             if (wsRef.current) wsRef.current.close();
-            if (sensorTimeoutRef.current) clearTimeout(sensorTimeoutRef.current);
         };
     }, []);
 
-    // 3. Điều khiển Bật/Tắt Đèn LED qua REST API & MQTT (CÓ HIỆU ỨNG LOADING MIN 0.5S)
     const handleToggleDevice = async (id) => {
-        if (loadingDevices[id]) return; // Tránh bấm liên tục khi đang xử lý
+        if (loadingDevices[id]) return;
 
         const targetDev = devices.find((d) => d.id === id);
         if (!targetDev) return;
@@ -172,7 +161,6 @@ export default function Dashboard() {
         const msg = `${actionWord} ${targetDev.name} thành công`;
         const startTime = Date.now();
 
-        // Bật loading cho nút công tắc thiết bị này
         setLoadingDevices(prev => ({ ...prev, [id]: true }));
 
         try {
@@ -184,38 +172,22 @@ export default function Dashboard() {
                 })
             });
 
-            // Nếu API phản hồi nhanh hơn 0.5s (500ms), bắt buộc chờ đủ 0.5s để thể hiện hiệu ứng loading
             const elapsedTime = Date.now() - startTime;
             if (elapsedTime < 500) {
                 await new Promise(resolve => setTimeout(resolve, 500 - elapsedTime));
             }
 
-            // Cập nhật trạng thái mới trên giao diện sau khi bật/tắt thành công
             setDevices(prev => prev.map(dev => dev.id === id ? { ...dev, status: newStatus } : dev));
             setToast({ type: 'success', message: msg });
         } catch (err) {
-            // Khi thất bại, Backend mất đúng 3 giây timeout nên loading tự động kéo dài 3 giây trước khi báo lỗi
             setToast({ type: 'error', message: `${actionWord} ${targetDev.name} thất bại!` });
         } finally {
-            // Tắt loading cho thiết bị
             setLoadingDevices(prev => ({ ...prev, [id]: false }));
         }
     };
 
     return (
         <div className="space-y-4 relative overflow-hidden">
-            {/* CẢNH BÁO MẤT KẾT NỐI CẢM BIẾN / ESP32 */}
-            {/* {!isConnected && (
-                <div className="bg-rose-500 text-white px-4 py-3 rounded-2xl shadow-lg flex items-center justify-between animate-pulse">
-                    <div className="flex items-center space-x-3">
-                        <WifiOff className="w-5 h-5 text-white" />
-                        <span className="text-xs font-bold uppercase tracking-wider">
-                            Cảnh báo: Không thể kết nối tới Cảm biến / ESP32! Dữ liệu thời gian thực đang tạm dừng.
-                        </span>
-                    </div>
-                </div>
-            )} */}
-
             {/* TOAST THÔNG BÁO */}
             {toast && (
                 <div className="fixed top-16 right-6 z-50 flex items-center space-x-2 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-2xl transition-all animate-bounce">
@@ -224,8 +196,8 @@ export default function Dashboard() {
                 </div>
             )}
 
-            {/* STAT CARDS */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* 4 STAT CARDS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
                     <div>
                         <p className="text-xs font-medium text-gray-500 mb-0.5">Nhiệt độ</p>
@@ -234,6 +206,17 @@ export default function Dashboard() {
                     </div>
                     <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-500">
                         <Thermometer className="w-5 h-5" />
+                    </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p className="text-xs font-medium text-gray-500 mb-0.5">Độ ẩm</p>
+                        <h3 className="text-2xl font-bold text-gray-900">{latestSensors.humidity.current}%</h3>
+                        <p className="text-[11px] text-gray-400 mt-1">Cao nhất hôm nay: {latestSensors.humidity.max_today}%</p>
+                    </div>
+                    <div className="w-10 h-10 bg-cyan-50 rounded-xl flex items-center justify-center text-cyan-500">
+                        <Droplets className="w-5 h-5" />
                     </div>
                 </div>
 
@@ -248,14 +231,21 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+                {/* STAT CARD TỐC ĐỘ GIÓ: CHỈ NHẤP NHÁY ĐỎ TẠI ĐÂY KHI GIÓ > 300 */}
+                <div className={`p-4 rounded-2xl border shadow-sm flex items-center justify-between transition-all duration-300 ${isWindAlert
+                        ? 'bg-rose-100 border-2 border-rose-500 text-rose-900 animate-pulse'
+                        : 'bg-white border-gray-100'
+                    }`}>
                     <div>
-                        <p className="text-xs font-medium text-gray-500 mb-0.5">Độ ẩm</p>
-                        <h3 className="text-2xl font-bold text-gray-900">{latestSensors.humidity.current}%</h3>
-                        <p className="text-[11px] text-gray-400 mt-1">Cao nhất hôm nay: {latestSensors.humidity.max_today}%</p>
+                        <p className="text-xs font-medium text-gray-500 mb-0.5">Tốc độ gió (Wind Speed)</p>
+                        <h3 className={`text-2xl font-bold ${isWindAlert ? 'text-rose-600' : 'text-gray-900'}`}>
+                            {latestSensors.wind_speed?.current || 0} m/s
+                        </h3>
+                        <p className="text-[11px] text-gray-400 mt-1">Cao nhất hôm nay: {latestSensors.wind_speed?.max_today || 0} m/s</p>
                     </div>
-                    <div className="w-10 h-10 bg-cyan-50 rounded-xl flex items-center justify-center text-cyan-500">
-                        <Droplets className="w-5 h-5" />
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isWindAlert ? 'bg-rose-500 text-white' : 'bg-teal-50 text-teal-600'
+                        }`}>
+                        <Wind className="w-5 h-5" />
                     </div>
                 </div>
             </div>
@@ -269,7 +259,7 @@ export default function Dashboard() {
                             <ResponsiveContainer width="100%" height="100%">
                                 <LineChart data={chartData} margin={{ right: 30 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                    <XAxis dataKey="time" stroke="#94a3b8" fontSize={11} interval={0} minTickGap={0} />
+                                    <XAxis dataKey="time" stroke="#94a3b8" fontSize={11} />
                                     <YAxis stroke="#94a3b8" fontSize={11} domain={[0, 100]} />
                                     <Tooltip />
                                     <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: '11px' }} />
@@ -281,16 +271,17 @@ export default function Dashboard() {
                     </div>
 
                     <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-                        <h4 className="text-xs font-bold text-gray-800 mb-2 tracking-wide uppercase">BIỂU ĐỒ ĐỘ SÁNG</h4>
+                        <h4 className="text-xs font-bold text-gray-800 mb-2 tracking-wide uppercase">BIỂU ĐỒ ÁNH SÁNG & TỐC ĐỘ GIÓ</h4>
                         <div className="h-40">
                             <ResponsiveContainer width="100%" height="100%">
                                 <LineChart data={chartData} margin={{ right: 30 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                    <XAxis dataKey="time" stroke="#94a3b8" fontSize={11} interval={0} minTickGap={0} />
+                                    <XAxis dataKey="time" stroke="#94a3b8" fontSize={11} />
                                     <YAxis stroke="#94a3b8" fontSize={11} domain={[0, 1000]} />
                                     <Tooltip />
                                     <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: '11px' }} />
                                     <Line type="monotone" dataKey="lux" name="Ánh sáng (lux)" stroke="#eab308" strokeWidth={2} isAnimationActive={false} dot={{ r: 2.5 }} />
+                                    <Line type="monotone" dataKey="wind" name="Tốc độ gió (m/s)" stroke="#e11d48" strokeWidth={2} isAnimationActive={false} dot={{ r: 2.5 }} />
                                 </LineChart>
                             </ResponsiveContainer>
                         </div>
@@ -311,7 +302,7 @@ export default function Dashboard() {
                                 <div key={device.id} className="flex items-center justify-between p-3.5 bg-gray-50 rounded-xl border border-gray-100">
                                     <div className="flex items-center space-x-3">
                                         <div className={`p-2 rounded-lg ${device.status ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-400'}`}>
-                                            <Lightbulb className="w-4 h-4" />
+                                            <Sliders className="w-4 h-4" />
                                         </div>
                                         <span className="font-semibold text-xs text-gray-700">{device.name}</span>
                                     </div>
@@ -319,8 +310,8 @@ export default function Dashboard() {
                                         onClick={() => handleToggleDevice(device.id)}
                                         disabled={isLoading}
                                         className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-300 relative ${isLoading
-                                                ? 'bg-blue-400 opacity-80 cursor-not-allowed'
-                                                : device.status ? 'bg-blue-600' : 'bg-gray-300'
+                                            ? 'bg-blue-400 opacity-80 cursor-not-allowed'
+                                            : device.status ? 'bg-blue-600' : 'bg-gray-300'
                                             }`}
                                     >
                                         <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 flex items-center justify-center ${device.status ? 'translate-x-5' : 'translate-x-0'}`}>

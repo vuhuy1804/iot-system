@@ -17,7 +17,7 @@ class User(Base):
 class Sensor(Base):
     __tablename__ = "Sensor"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(50), nullable=False)
+    name = Column(String(50), nullable=False) # Nhiệt độ (1), Độ ẩm (2), Ánh sáng (3), Tốc độ gió (4)
     unit = Column(String(20), nullable=False)
 
 class DataSensor(Base):
@@ -40,4 +40,12 @@ class ActionHistory(Base):
     device_id = Column(Integer, ForeignKey("Device.id"))
     action = Column(String(50), nullable=False)
     status = Column(String(20), nullable=False)
+    recorded_at = Column(DateTime, server_default=func.now())
+
+
+class AlertHistory(Base):
+    __tablename__ = "AlertHistory"
+    id = Column(Integer, primary_key=True, index=True)
+    sensor_type = Column(String(50), default="Tốc độ gió")
+    value = Column(Float, nullable=False)
     recorded_at = Column(DateTime, server_default=func.now())

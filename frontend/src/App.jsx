@@ -1,9 +1,9 @@
-// src/App.jsx
 import React, { useState } from 'react';
 import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
 import DataHistory from './pages/DataHistory';
 import ActionHistory from './pages/ActionHistory';
+import AlertStats from './pages/AlertStats';
 import Profile from './pages/Profile';
 import Login from './pages/Login';
 import { useAuth } from './context/AuthContext';
@@ -24,6 +24,7 @@ export default function App() {
         {activeTab === 'dashboard' && <Dashboard />}
         {activeTab === 'sensor-history' && <DataHistory />}
         {activeTab === 'action-history' && <ActionHistory />}
+        {activeTab === 'alert-stats' && <AlertStats />}
         {activeTab === 'profile' && <Profile />}
       </main>
     </div>
