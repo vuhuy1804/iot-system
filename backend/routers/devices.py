@@ -85,8 +85,7 @@ async def get_devices(db: AsyncSession = Depends(get_db)):
 async def control_device(
     data: DeviceControlSchema, 
     db: AsyncSession = Depends(get_db),
-    
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user) # Lấy người dùng hiện tại từ JWT
 ):
     """
     **Luồng Điều khiển Hardware ACK & Bảo mật**:
@@ -113,7 +112,8 @@ async def control_device(
     await db.commit()
     await db.refresh(action_log)
 
-    led_code = "led1" if device.id == 1 else "led2"
+    # ĐỊNH DẠNG MÃ ĐÈN LINH HOẠT CHÔ CẢ LED 1, LED 2 VÀ LED 3
+    led_code = f"led{device.id}" # Sẽ sinh ra 'led1', 'led2', 'led3'
     payload = f"{led_code}:{data.action.lower()}"
 
     loop = asyncio.get_running_loop()
@@ -122,7 +122,6 @@ async def control_device(
 
     try:
         publish_command("device/control", payload)
-
         ack_payload = await asyncio.wait_for(fut, timeout=3.0)
 
         if data.action.upper() in ack_payload.upper():
@@ -149,11 +148,7 @@ async def control_device(
     except asyncio.TimeoutError:
         action_log.status = "Thất bại"
         await db.commit()
-        
-        raise HTTPException(
-            status_code=504, 
-            detail="Thiết bị phần cứng (ESP32) không phản hồi hoặc đang ngoại tuyến (Timeout)!"
-        )
+        raise HTTPException(status_code=504, detail="Thiết bị phần cứng (ESP32) không phản hồi!")
     finally:
         unregister_pending_ack(led_code)
 

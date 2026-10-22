@@ -2,7 +2,8 @@ import json
 import asyncio
 import paho.mqtt.client as mqtt
 from database import AsyncSessionLocal
-from models import DataSensor, AlertHistory
+from models import DataSensor, AlertHistory, ActionHistory, Device
+from sqlalchemy.future import select
 
 mqtt_client = None
 main_loop = None
@@ -23,7 +24,11 @@ def _safe_set_result(fut, result):
     if not fut.done():
         fut.set_result(result)
 
+# Biến toàn cục theo dõi trạng thái Đèn LED 3
+last_led3_state = "OFF"
+
 async def process_sensor_payload(data):
+    global last_led3_state
     try:
         raw_temp = data.get("temp") if data.get("temp") is not None else data.get("temperature")
         raw_hum = data.get("hum") if data.get("hum") is not None else data.get("humidity")
@@ -35,9 +40,8 @@ async def process_sensor_payload(data):
         lux = float(raw_lux) if raw_lux is not None else None
         wind = float(raw_wind) if raw_wind is not None else None
 
-        is_alert = False
-        if wind is not None and wind > 300.0:
-            is_alert = True
+        is_alert = (wind is not None and wind > 300.0)
+        current_led3_state = "ON" if is_alert else "OFF"
 
         async with AsyncSessionLocal() as session:
             async with session.begin():
@@ -50,9 +54,28 @@ async def process_sensor_payload(data):
                 if wind is not None:
                     session.add(DataSensor(sensor_id=4, value=wind))
                 
-                # Lưu vào lịch sử cảnh báo nếu wind_speed > 300
+                # 1. Lưu bản ghi AlertHistory
                 if is_alert:
-                    session.add(AlertHistory(sensor_type="Tốc độ gió", value=wind))
+                    session.add(AlertHistory(sensor_type="wind-speed", value=wind))
+
+                # 2. TỰ ĐỘNG CẬP NHẬT TRẠNG THÁI & LƯU ACTION HISTORY CHO ĐÈN LED 3 KHI ĐỔI TRẠNG THÁI CẢNH BÁO
+                if current_led3_state != last_led3_state:
+                    # Cập nhật trạng thái Đèn 3 trong bảng Device
+                    res = await session.execute(select(Device).filter(Device.id == 3))
+                    dev3 = res.scalars().first()
+                    if dev3:
+                        dev3.status = current_led3_state
+
+                    # Thêm lịch sử thao tác vào ActionHistory (user_id = 1 là sinh viên thực hiện)
+                    action_name = "Bật đèn" if current_led3_state == "ON" else "Tắt đèn"
+                    session.add(ActionHistory(
+                        user_id=1,
+                        device_id=3,
+                        action=action_name,
+                        status="Thành công"
+                    ))
+                    
+                    last_led3_state = current_led3_state
 
         from main import manager
         await manager.broadcast({

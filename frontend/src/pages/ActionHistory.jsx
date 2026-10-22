@@ -92,6 +92,7 @@ export default function ActionHistory() {
                     <option value="Tất cả">Thiết bị: Tất cả</option>
                     <option value="Đèn led 1">Đèn led 1</option>
                     <option value="Đèn led 2">Đèn led 2</option>
+                    <option value="Đèn led 3">Đèn led 3</option>
                 </select>
 
                 <select

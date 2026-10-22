@@ -233,8 +233,8 @@ export default function Dashboard() {
 
                 {/* STAT CARD TỐC ĐỘ GIÓ: CHỈ NHẤP NHÁY ĐỎ TẠI ĐÂY KHI GIÓ > 300 */}
                 <div className={`p-4 rounded-2xl border shadow-sm flex items-center justify-between transition-all duration-300 ${isWindAlert
-                        ? 'bg-rose-100 border-2 border-rose-500 text-rose-900 animate-pulse'
-                        : 'bg-white border-gray-100'
+                    ? 'bg-rose-100 border-2 border-rose-500 text-rose-900 animate-pulse'
+                    : 'bg-white border-gray-100'
                     }`}>
                     <div>
                         <p className="text-xs font-medium text-gray-500 mb-0.5">Tốc độ gió (Wind Speed)</p>
@@ -295,7 +295,7 @@ export default function Dashboard() {
                     </div>
 
                     <div className="space-y-3">
-                        {devices.map((device) => {
+                        {devices.filter((device) => device.id !== 3).map((device) => {
                             const isLoading = loadingDevices[device.id];
 
                             return (
